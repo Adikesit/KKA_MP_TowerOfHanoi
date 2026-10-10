@@ -1,0 +1,980 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Menara Hanoi Multi-Tiang</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Unbounded:wght@500;600&display=swap">
+<style>
+/* Layout: papan di tray cekung + kontrol di kanan; tabel perbandingan; kanvas graf pencarian selebar halaman. */
+:root{
+  --bg:#E8EDF1; --surface:#F7F9FA; --sunken:#DBE2E8; --ink:#12202B; --ink-2:#47596A; --line:#C3CDD6;
+  --accent:#0E7490; --accent-ink:#FFFFFF; --accent-soft:#CFE7ED; --good:#2B7A4B; --bad:#B3402A; --pole:#8798A7;
+  --g-exp:#6F8797; --g-edge:#9FB0BE; --g-front:#47596A; --g-cur:#E08A00; --g-goal:#2B7A4B; --g-path:#0E7490; --g-pruned:#B5C2CD;
+  --d1:#F4B942; --d2:#EE8B4E; --d3:#E0606B; --d4:#E58AB6; --d5:#B76FC4; --d6:#6F8FE0; --d7:#3FB6C7; --d8:#5CBE8A; --d9:#A6C84F; --d10:#A3B1BF; --on-disk:#101C26;
+  --font-display:'Unbounded','Hanken Grotesk',system-ui,sans-serif;
+  --font-body:'Hanken Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --font-mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+  --move-ms:260ms;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0F171E; --surface:#16212A; --sunken:#0B1117; --ink:#E6EDF2; --ink-2:#9AAEBD; --line:#2B3A46;
+  --accent:#4FC3D9; --accent-ink:#06222A; --accent-soft:#143640; --good:#6CCB8F; --bad:#F08A72; --pole:#52687A;
+  --g-exp:#7C94A6; --g-edge:#3A4D5C; --g-front:#9AAEBD; --g-cur:#F2B240; --g-goal:#6CCB8F; --g-path:#4FC3D9; --g-pruned:#2E3F4B; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0F171E; --surface:#16212A; --sunken:#0B1117; --ink:#E6EDF2; --ink-2:#9AAEBD; --line:#2B3A46;
+  --accent:#4FC3D9; --accent-ink:#06222A; --accent-soft:#143640; --good:#6CCB8F; --bad:#F08A72; --pole:#52687A;
+  --g-exp:#7C94A6; --g-edge:#3A4D5C; --g-front:#9AAEBD; --g-cur:#F2B240; --g-goal:#6CCB8F; --g-path:#4FC3D9; --g-pruned:#2E3F4B; color-scheme:dark}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:15px;line-height:1.5}
+*,*::before,*::after{box-sizing:border-box}
+button,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:1120px;margin-inline:auto;padding-inline:clamp(16px,4vw,32px);padding-block:28px 64px;display:flex;flex-direction:column;gap:44px}
+.kicker{font:500 12px/1 var(--font-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin:0 0 12px}
+h1{font-family:var(--font-display);font-weight:600;font-size:clamp(1.55rem,5.2vw,2.5rem);line-height:1.12;margin:0 0 12px;text-wrap:balance;letter-spacing:-.01em}
+h2{font-family:var(--font-display);font-weight:500;font-size:1.1rem;line-height:1.25;margin:0;text-wrap:balance}
+.lede{max-width:62ch;color:var(--ink-2);margin:0}
+.sec-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 16px;margin-bottom:14px}
+.sec-head p{margin:0;color:var(--ink-2);font-size:13.5px;max-width:72ch}
+.mono{font-family:var(--font-mono)}
+
+/* play */
+.play{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:28px;align-items:start}
+@media (max-width:880px){.play{grid-template-columns:minmax(0,1fr)}}
+.tray{background:var(--sunken);border:1px solid var(--line);border-radius:12px;padding:14px 14px 12px;min-width:0}
+.status{display:flex;flex-wrap:wrap;gap:4px 20px;align-items:baseline;font-size:13px;color:var(--ink-2);margin-bottom:10px}
+.status b{font:500 16px var(--font-mono);color:var(--ink);margin-left:4px}
+.board{position:relative;width:100%;user-select:none;-webkit-user-select:none}
+.peg{position:absolute;top:0;bottom:0;cursor:pointer;border-radius:8px}
+.peg:hover{background:color-mix(in srgb,var(--accent) 8%,transparent)}
+.peg.target{background:color-mix(in srgb,var(--accent) 14%,transparent)}
+.pole{position:absolute;left:50%;transform:translateX(-50%);width:8px;top:4px;bottom:30px;border-radius:4px 4px 0 0;background:var(--pole)}
+.plate{position:absolute;left:3%;right:3%;bottom:22px;height:9px;border-radius:5px;background:var(--pole)}
+.peg-name{position:absolute;left:0;right:0;bottom:2px;text-align:center;font:500 12px var(--font-mono);color:var(--ink-2)}
+.peg.goal .peg-name{color:var(--accent)}
+@media (max-width:560px){.goal-tag{display:none}}
+.disk{position:absolute;border-radius:7px;display:flex;align-items:center;justify-content:center;font:500 11px var(--font-mono);color:var(--on-disk);box-shadow:inset 0 -3px 0 rgba(0,0,0,.16);pointer-events:none;transition:left var(--move-ms) ease,bottom var(--move-ms) ease}
+.disk.sel{box-shadow:inset 0 -3px 0 rgba(0,0,0,.16),0 0 0 2.5px var(--ink)}
+.msg{min-height:3em;margin:10px 0 0;font-size:13.5px;color:var(--ink-2)}
+.msg.good{color:var(--good);font-weight:600}
+.msg.bad{color:var(--bad)}
+.board-foot{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+
+/* controls */
+.group{display:grid;gap:9px;padding-block:15px;border-top:1px solid var(--line)}
+.group:first-child{border-top:0;padding-top:0}
+.label{font:500 11.5px var(--font-mono);letter-spacing:.07em;text-transform:uppercase;color:var(--ink-2);display:flex;justify-content:space-between;align-items:baseline}
+.label output{font-size:13px;color:var(--ink);letter-spacing:0}
+.seg{display:flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--surface);width:100%}
+.seg button{flex:1;min-height:42px;padding:0 12px;border:0;border-left:1px solid var(--line);background:transparent;cursor:pointer;font-weight:600}
+.seg button:first-child{border-left:0}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.seg button:disabled{opacity:.5;cursor:not-allowed}
+input[type=range]{width:100%;accent-color:var(--accent);min-height:28px}
+.chips{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.chip{text-align:left;padding:9px 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface);cursor:pointer;display:grid;gap:1px;min-width:0}
+.chip strong{font:500 15px var(--font-mono)}
+.chip span{font-size:12px;color:var(--ink-2)}
+.chip[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}
+.chip:disabled{opacity:.55;cursor:not-allowed}
+.algo-note{margin:0;font-size:13px;color:var(--ink-2)}
+.btn{min-height:42px;padding:0 16px;border-radius:9px;border:1px solid var(--line);background:var(--surface);cursor:pointer;font-weight:600;font-size:14px;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.btn:hover:not(:disabled){border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover:not(:disabled){filter:brightness(1.08)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.sm{min-height:34px;padding:0 12px;font-size:13px}
+.btn-col{display:grid;gap:8px}
+
+/* compare */
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:780px;font-size:13.5px}
+th{font:500 11.5px var(--font-mono);letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2);text-align:left;padding:11px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+tr.active td{background:var(--accent-soft)}
+td.algo strong{font:500 15px var(--font-mono);display:block}
+td.algo span{font-size:12px;color:var(--ink-2)}
+td.num{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.cell{display:grid;gap:5px;min-width:96px}
+.bar{height:6px;border-radius:3px;background:var(--accent);min-width:2px}
+.best{font-weight:700;color:var(--accent)}
+.pill{font:500 11px var(--font-mono);padding:2px 9px;border-radius:99px;border:1px solid currentColor;white-space:nowrap}
+.pill.ok{color:var(--good)} .pill.no{color:var(--bad)}
+.row-actions{display:flex;gap:6px}
+.insight{margin:14px 0 0;max-width:80ch;font-size:15px}
+.runinfo{font:400 12.5px var(--font-mono);color:var(--ink-2);margin:0 0 10px}
+details{margin-top:16px;border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:0 14px}
+summary{cursor:pointer;min-height:44px;display:flex;align-items:center;font-weight:600}
+details .body{padding:2px 0 14px;display:grid;gap:8px;max-width:78ch;font-size:14px;color:var(--ink-2)}
+details .body p{margin:0}
+details .body b{color:var(--ink)}
+
+/* graph */
+.stagebar{display:flex;flex-wrap:wrap;gap:10px 12px;align-items:center;margin:12px 0 8px}
+.stagebar .slider{flex:1 1 220px;min-width:0}
+.ctrls{display:flex;gap:6px}
+.icon-btn{width:40px;height:40px;border-radius:9px;border:1px solid var(--line);background:var(--surface);cursor:pointer;display:grid;place-items:center;padding:0}
+.icon-btn:hover:not(:disabled){border-color:var(--accent)}
+.icon-btn svg{width:18px;height:18px;fill:currentColor}
+.icon-btn:disabled{opacity:.45;cursor:not-allowed}
+.stageinfo{font:400 12.5px/1.5 var(--font-mono);color:var(--ink);min-height:3em;margin:0 0 8px}
+.canvas-wrap{position:relative;height:clamp(360px,64vh,580px);background:var(--sunken);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+canvas{width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+canvas.drag{cursor:grabbing}
+.zoom{position:absolute;right:10px;top:10px;display:flex;flex-direction:column;gap:6px}
+.zoom .icon-btn{width:36px;height:36px;font:600 16px var(--font-mono)}
+.hint{position:absolute;left:12px;bottom:8px;font-size:11.5px;color:var(--ink-2);pointer-events:none}
+.legend{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:12.5px;color:var(--ink-2);margin-top:12px}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;vertical-align:-1px;margin-right:6px;border:2px solid}
+.detail{display:grid;grid-template-columns:auto minmax(0,1fr);gap:16px;align-items:center;margin-top:12px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+@media (max-width:520px){.detail{grid-template-columns:minmax(0,1fr)}}
+.detail dl{display:grid;grid-template-columns:auto 1fr;gap:3px 14px;margin:0;font-size:13px}
+.detail dt{color:var(--ink-2)} .detail dd{margin:0;font-family:var(--font-mono)}
+.detail .none{color:var(--ink-2);font-size:13.5px;margin:0;grid-column:1/-1}
+.mini{max-width:100%}
+@media (prefers-reduced-motion:reduce){.disk{transition:none}}
+</style>
+<main class="wrap">
+  <header>
+    <p class="kicker">Simulator algoritma pencarian</p>
+    <h1>Menara Hanoi Multi-Tiang</h1>
+    <p class="lede">Mainkan sendiri dengan 3 sampai 5 tiang, lalu biarkan BFS, UCS, GBFS, atau A* menyelesaikannya. Hasilnya dibandingkan, dan setiap tahap pencariannya bisa dilihat sebagai graf.</p>
+  </header>
+
+  <section class="play" aria-labelledby="h-play">
+    <div class="tray">
+      <div class="status" aria-live="polite">
+        <span>Langkah<b id="st-moves">0</b></span>
+        <span>Minimum<b id="st-opt">7</b></span>
+        <span>Cakram<b id="st-n">3</b></span>
+      </div>
+      <div id="board" class="board" aria-label="Papan permainan"></div>
+      <p id="msg" class="msg" role="status"></p>
+      <div class="board-foot">
+        <button class="btn sm" id="btn-undo" type="button">Urungkan</button>
+        <button class="btn sm" id="btn-reset" type="button">Ulangi dari awal</button>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div class="group">
+        <h2 id="h-play" style="font-size:1rem">Pengaturan</h2>
+      </div>
+      <div class="group">
+        <div class="label"><span>Jumlah tiang</span></div>
+        <div class="seg" id="seg-k" role="group" aria-label="Jumlah tiang">
+          <button type="button" data-k="3" aria-pressed="true">3</button>
+          <button type="button" data-k="4" aria-pressed="false">4</button>
+          <button type="button" data-k="5" aria-pressed="false">5</button>
+        </div>
+      </div>
+      <div class="group">
+        <div class="label"><label for="rng-n">Jumlah cakram</label><output id="out-n" for="rng-n">3</output></div>
+        <input id="rng-n" type="range" min="2" max="10" step="1" value="3">
+      </div>
+      <div class="group">
+        <div class="label"><span>Algoritma penyelesai</span></div>
+        <div class="chips" id="chips" role="group" aria-label="Algoritma"></div>
+        <p class="algo-note" id="algo-note"></p>
+      </div>
+      <div class="group">
+        <div class="label"><label for="rng-speed">Kecepatan animasi</label><output id="out-speed" for="rng-speed">sedang</output></div>
+        <input id="rng-speed" type="range" min="1" max="5" step="1" value="3">
+      </div>
+      <div class="group btn-col">
+        <button class="btn primary" id="btn-solve" type="button">Selesaikan otomatis</button>
+        <button class="btn" id="btn-compare" type="button">Bandingkan semua dari posisi sekarang</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="compare" aria-labelledby="h-compare">
+    <div class="sec-head">
+      <h2 id="h-compare">Perbandingan algoritma</h2>
+      <p>Keempat algoritma menyelesaikan masalah yang sama dari posisi awal yang sama.</p>
+    </div>
+    <p class="runinfo" id="runinfo"></p>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Algoritma</th><th>Langkah solusi</th><th>Node diproses</th><th>Node dibangkitkan</th><th>Frontier maks</th><th>Waktu</th><th>Optimal</th><th></th></tr>
+        </thead>
+        <tbody id="cmp-body"></tbody>
+      </table>
+    </div>
+    <p class="insight" id="insight"></p>
+    <details>
+      <summary>Cara masalah ini dimodelkan</summary>
+      <div class="body">
+        <p><b>State.</b> Posisi setiap cakram. Label seperti <span class="mono">ABA</span> berarti cakram 1 di tiang A, cakram 2 di B, cakram 3 di A.</p>
+        <p><b>Aksi dan biaya.</b> Memindahkan cakram teratas ke tiang lain yang kosong atau yang cakram teratasnya lebih besar. Setiap pemindahan berbiaya 1.</p>
+        <p><b>Tujuan.</b> Semua cakram berada di tiang terakhir.</p>
+        <p><b>Heuristik h.</b> Misalkan m adalah cakram terbesar yang belum di tiang tujuan. Cakram m butuh minimal 1 langkah. Tiap cakram yang lebih kecil butuh minimal 1 langkah, dan minimal 2 bila ia berada di tiang tujuan atau di tiang m, karena harus menyingkir dulu. Nilai ini tidak pernah melebihi biaya sebenarnya, jadi A* tetap optimal.</p>
+        <p><b>Urutan prioritas.</b> BFS memakai antrean (FIFO). UCS mengurutkan berdasarkan g. GBFS berdasarkan h. A* berdasarkan g + h.</p>
+      </div>
+    </details>
+  </section>
+
+  <section id="graph" aria-labelledby="h-graph">
+    <div class="sec-head">
+      <h2 id="h-graph">Graf pencarian per tahap</h2>
+      <p>Satu tahap adalah satu node yang diambil dari frontier. Geser penggeser atau putar untuk melihat pohon pencarian tumbuh.</p>
+    </div>
+    <div class="seg" id="seg-algo" role="group" aria-label="Algoritma pada graf"></div>
+    <div class="stagebar">
+      <div class="ctrls">
+        <button class="icon-btn" id="g-first" type="button" aria-label="Ke tahap awal"><svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
+        <button class="icon-btn" id="g-prev" type="button" aria-label="Tahap sebelumnya"><svg viewBox="0 0 24 24"><path d="M17 5v14L6 12z"/></svg></button>
+        <button class="icon-btn" id="g-play" type="button" aria-label="Putar tahap"><svg viewBox="0 0 24 24"><path d="M7 4v16l13-8z"/></svg></button>
+        <button class="icon-btn" id="g-next" type="button" aria-label="Tahap berikutnya"><svg viewBox="0 0 24 24"><path d="M7 5v14l11-7z"/></svg></button>
+        <button class="icon-btn" id="g-last" type="button" aria-label="Ke tahap akhir"><svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
+      </div>
+      <input class="slider" id="g-slider" type="range" min="0" max="0" value="0" aria-label="Tahap pencarian">
+    </div>
+    <p class="stageinfo" id="g-info" aria-live="polite"></p>
+    <div class="canvas-wrap" id="cv-wrap">
+      <canvas id="cv" aria-label="Graf pohon pencarian"></canvas>
+      <div class="zoom">
+        <button class="icon-btn" id="z-in" type="button" aria-label="Perbesar">+</button>
+        <button class="icon-btn" id="z-out" type="button" aria-label="Perkecil">&minus;</button>
+        <button class="icon-btn" id="z-fit" type="button" aria-label="Pas ke layar"><svg viewBox="0 0 24 24"><path d="M4 4h6v2H6v4H4zM14 4h6v6h-2V6h-4zM4 14h2v4h4v2H4zM18 14h2v6h-6v-2h4z"/></svg></button>
+      </div>
+      <span class="hint">Geser untuk menggeser. Ctrl + gulir atau cubit untuk zoom. Ketuk node untuk detail.</span>
+    </div>
+    <div class="legend" id="legend">
+      <span><i class="dot" style="border-color:var(--g-front);background:transparent"></i>Frontier</span>
+      <span><i class="dot" style="border-color:var(--g-exp);background:var(--g-exp)"></i>Sudah diproses</span>
+      <span><i class="dot" style="border-color:var(--g-cur);background:var(--g-cur)"></i>Sedang diproses</span>
+      <span><i class="dot" style="border-color:var(--g-goal);background:var(--g-goal)"></i>Tujuan</span>
+      <span><i class="dot" style="border-color:var(--g-path);background:transparent"></i>Jalur solusi</span>
+      <span><i class="dot" style="border-color:var(--g-pruned);background:var(--g-pruned);width:6px;height:6px"></i>Duplikat dibuang</span>
+    </div>
+    <p class="runinfo" id="g-trunc" style="margin-top:10px"></p>
+    <div class="detail" id="g-detail"></div>
+  </section>
+</main>
+<script>
+/* ---------- Solver: Tower of Hanoi (3-5 pegs) ---------- */
+function Vec() { this.a = new Int32Array(1024); this.n = 0; }
+Vec.prototype.push = function (v) {
+  if (this.n === this.a.length) { const b = new Int32Array(this.n * 2); b.set(this.a); this.a = b; }
+  this.a[this.n++] = v;
+};
+
+/* A state is an integer: digit i (base k) = peg of disk i (disk 0 = smallest). */
+function makeProblem(k, n) {
+  const pw = [1];
+  for (let i = 1; i < n; i++) pw.push(pw[i - 1] * k);
+  const size = pw[n - 1] * k;
+  const dig = new Int32Array(n);
+  const top = new Int32Array(k);
+  function decode(s) {
+    for (let i = 0; i < n; i++) { const d = s % k; dig[i] = d; s = (s - d) / k; }
+  }
+  function enc(pos) { let s = 0; for (let i = 0; i < n; i++) s += pos[i] * pw[i]; return s; }
+  function toPos(s) { decode(s); return Array.from(dig); }
+  /* Admissible heuristic: let m be the largest disk not on the goal peg.
+     m needs >= 1 move; each smaller disk needs >= 1 move, and >= 2 when it sits
+     on the goal peg or on m's peg (it has to step aside first). */
+  function h(s) {
+    decode(s);
+    let m = -1;
+    for (let i = n - 1; i >= 0; i--) if (dig[i] !== k - 1) { m = i; break; }
+    if (m < 0) return 0;
+    const pm = dig[m];
+    let v = 1;
+    for (let i = 0; i < m; i++) v += (dig[i] === k - 1 || dig[i] === pm) ? 2 : 1;
+    return v;
+  }
+  function succ(s, out) {
+    decode(s);
+    top.fill(-1);
+    for (let i = 0; i < n; i++) { const p = dig[i]; if (top[p] < 0) top[p] = i; }
+    let c = 0;
+    for (let a = 0; a < k; a++) {
+      const ta = top[a];
+      if (ta < 0) continue;
+      for (let b = 0; b < k; b++) {
+        if (b === a) continue;
+        const tb = top[b];
+        if (tb < 0 || ta < tb) out[c++] = s + (b - a) * pw[ta];
+      }
+    }
+    return c;
+  }
+  return { k, n, pw, size, goalS: size - 1, enc, toPos, h, succ };
+}
+
+function Heap(less) { this.h = []; this.less = less; }
+Heap.prototype.push = function (v) {
+  const h = this.h, less = this.less; let i = h.length; h.push(v);
+  while (i > 0) { const p = (i - 1) >> 1; if (less(v, h[p])) { h[i] = h[p]; i = p; } else break; }
+  h[i] = v;
+};
+Heap.prototype.pop = function () {
+  const h = this.h, less = this.less, r = h[0], x = h.pop();
+  if (h.length) {
+    let i = 0; const L = h.length;
+    for (;;) {
+      let c = 2 * i + 1; if (c >= L) break;
+      if (c + 1 < L && less(h[c + 1], h[c])) c++;
+      if (less(h[c], x)) { h[i] = h[c]; i = c; } else break;
+    }
+    h[i] = x;
+  }
+  return r;
+};
+
+function runSearch(algo, P, startPos, cap) {
+  cap = cap || 600000;
+  const { k, n, size, goalS, h, succ, enc, toPos } = P;
+  const INF = 2147483647;
+  const t0 = performance.now();
+  const nState = new Vec(), nParent = new Vec(), nG = new Vec(), nH = new Vec(),
+        nGen = new Vec(), nExp = new Vec(), nSkip = new Vec();
+  function newNode(s, p, g, hv, gen) {
+    nState.push(s); nParent.push(p); nG.push(g); nH.push(hv); nGen.push(gen); nExp.push(0); nSkip.push(0);
+    return nState.n - 1;
+  }
+  const out = new Int32Array(k * (k - 1));
+  const startS = enc(startPos);
+  let t = 0, frontierMax = 0, goalNode = -1, aborted = false;
+
+  if (algo === 'bfs') {
+    const seen = new Uint8Array(size);
+    const q = new Vec(); let qh = 0;
+    seen[startS] = 1;
+    q.push(newNode(startS, -1, 0, h(startS), 0));
+    while (qh < q.n) {
+      const fr = q.n - qh; if (fr > frontierMax) frontierMax = fr;
+      const node = q.a[qh++], s = nState.a[node];
+      t++; nExp.a[node] = t;
+      if (s === goalS) { goalNode = node; break; }
+      if (t >= cap) { aborted = true; break; }
+      const c = succ(s, out), g1 = nG.a[node] + 1;
+      for (let j = 0; j < c; j++) {
+        const ch = out[j];
+        if (seen[ch]) continue;
+        seen[ch] = 1;
+        q.push(newNode(ch, node, g1, h(ch), t));
+      }
+    }
+  } else {
+    const k1 = algo === 'ucs' ? (i) => nG.a[i]
+             : algo === 'gbfs' ? (i) => nH.a[i]
+             : (i) => nG.a[i] + nH.a[i];
+    const k2 = algo === 'astar' ? (i) => nH.a[i] : () => 0;
+    const heap = new Heap((a, b) => {
+      const x = k1(a), y = k1(b); if (x !== y) return x < y;
+      const p = k2(a), q = k2(b); if (p !== q) return p < q;
+      return a < b;
+    });
+    const bestG = new Int32Array(size).fill(INF);
+    const expG = new Int32Array(size).fill(INF);
+    bestG[startS] = 0;
+    heap.push(newNode(startS, -1, 0, h(startS), 0));
+    while (heap.h.length) {
+      if (heap.h.length > frontierMax) frontierMax = heap.h.length;
+      const node = heap.pop(), s = nState.a[node], g = nG.a[node];
+      if (g > bestG[s] || expG[s] <= g) { nSkip.a[node] = t; continue; }
+      t++; nExp.a[node] = t; expG[s] = g;
+      if (s === goalS) { goalNode = node; break; }
+      if (t >= cap) { aborted = true; break; }
+      const c = succ(s, out), ng = g + 1;
+      for (let j = 0; j < c; j++) {
+        const ch = out[j];
+        if (algo === 'gbfs') { if (bestG[ch] !== INF) continue; bestG[ch] = ng; }
+        else { if (ng >= bestG[ch]) continue; bestG[ch] = ng; }
+        heap.push(newNode(ch, node, ng, h(ch), t));
+      }
+    }
+  }
+
+  const timeMs = performance.now() - t0;
+  const N = nState.n;
+  const res = {
+    algo, found: goalNode >= 0, aborted, expanded: t, generated: N, frontierMax, timeMs,
+    T: t, goalNode, pathNodes: [], moves: [], pathLen: 0,
+    nodes: { count: N, state: nState.a, parent: nParent.a, g: nG.a, h: nH.a, gen: nGen.a, exp: nExp.a, skip: nSkip.a },
+  };
+  if (res.found) {
+    let id = goalNode; const path = [];
+    while (id >= 0) { path.push(id); id = nParent.a[id]; }
+    path.reverse();
+    res.pathNodes = path; res.pathLen = path.length - 1;
+    for (let i = 1; i < path.length; i++) {
+      const a = toPos(nState.a[path[i - 1]]), b = toPos(nState.a[path[i]]);
+      for (let d = 0; d < n; d++) if (a[d] !== b[d]) { res.moves.push({ disk: d, from: a[d], to: b[d] }); break; }
+    }
+  }
+  /* per-stage helpers for the graph view */
+  const expAt = new Int32Array(t + 2).fill(-1);
+  const diff = new Int32Array(t + 3);
+  for (let i = 0; i < N; i++) {
+    const e = nExp.a[i], sk = nSkip.a[i];
+    if (e > 0 && expAt[e] < 0) expAt[e] = i;
+    const gen = nGen.a[i];
+    const leave = e > 0 ? e : (sk > 0 ? sk : t + 1);
+    if (leave > gen) { diff[gen]++; diff[leave]--; }
+  }
+  const frontierAt = new Int32Array(t + 2);
+  let run = 0;
+  for (let s = 0; s <= t; s++) { run += diff[s]; frontierAt[s] = run; }
+  res.expAt = expAt; res.frontierAt = frontierAt;
+  return res;
+}
+
+function bfsLen(P, startPos) {
+  const { size, goalS, succ, enc } = P;
+  const out = new Int32Array(P.k * (P.k - 1));
+  const dist = new Int32Array(size).fill(-1);
+  const q = new Int32Array(size);
+  const s0 = enc(startPos);
+  let qh = 0, qt = 0; q[qt++] = s0; dist[s0] = 0;
+  while (qh < qt) {
+    const s = q[qh++];
+    if (s === goalS) return dist[s];
+    const c = succ(s, out);
+    for (let j = 0; j < c; j++) { const ch = out[j]; if (dist[ch] < 0) { dist[ch] = dist[s] + 1; q[qt++] = ch; } }
+  }
+  return -1;
+}
+/* ---------- UI ---------- */
+const PEGS = ['A', 'B', 'C', 'D', 'E'];
+const ALGOS = [
+  { id: 'bfs', short: 'BFS', long: 'Breadth-First', note: 'Meluas level demi level dengan antrean (FIFO). Selalu menemukan langkah terpendek, tetapi frontier-nya membesar sangat cepat.' },
+  { id: 'ucs', short: 'UCS', long: 'Uniform-Cost', note: 'Meluas menurut biaya g terkecil. Selalu optimal, tetapi memproses banyak node.' },
+  { id: 'gbfs', short: 'GBFS', long: 'Greedy Best-First', note: 'Mengejar node dengan h terkecil. Sangat cepat, tetapi tidak menjamin solusi terpendek.' },
+  { id: 'astar', short: 'A*', long: 'g + h', note: 'Menggabungkan g dan h. Optimal dengan heuristik admissible, dan jauh lebih hemat dari UCS.' },
+];
+const SPEEDS = [800, 450, 250, 120, 45];
+const SPEED_LABELS = ['lambat', 'agak lambat', 'sedang', 'cepat', 'sangat cepat'];
+const $ = (id) => document.getElementById(id);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const fmt = (n) => Number(n).toLocaleString('id-ID');
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const probs = {};
+const getProb = (k, n) => probs[k + '-' + n] || (probs[k + '-' + n] = makeProblem(k, n));
+
+const S = {
+  k: 3, n: 3, pos: [0, 0, 0], hist: [], moves: 0, sel: null, busy: false, algo: 'astar',
+  run: null, opt: 0, stage: 0, gsel: -1, speedMs: SPEEDS[2], playTok: 0, gplay: null,
+  view: { s: 1, tx: 0, ty: 0 }, cv: { w: 0, h: 0, dpr: 1 }, autoFit: true, runTimer: null,
+  pegEls: [], diskEls: [], geom: null,
+};
+
+/* ----- board ----- */
+function setMsg(text, cls) { const m = $('msg'); m.textContent = text || ''; m.className = 'msg' + (cls ? ' ' + cls : ''); }
+function topOf(p) { for (let d = 0; d < S.n; d++) if (S.pos[d] === p) return d; return -1; }
+function canMove(a, b) { const ta = topOf(a), tb = topOf(b); return ta >= 0 && a !== b && (tb < 0 || ta < tb); }
+function solved() { return S.pos.every((p) => p === S.k - 1); }
+
+function buildBoard() {
+  const b = $('board'); b.innerHTML = ''; S.pegEls = []; S.diskEls = [];
+  for (let p = 0; p < S.k; p++) {
+    const el = document.createElement('div');
+    el.className = 'peg' + (p === S.k - 1 ? ' goal' : '');
+    el.tabIndex = 0; el.setAttribute('role', 'button'); el.dataset.peg = p;
+    el.innerHTML = '<div class="pole"></div><div class="plate"></div><div class="peg-name">' + PEGS[p] + (p === S.k - 1 ? '<span class="goal-tag"> · tujuan</span>' : '') + '</div>';
+    b.appendChild(el); S.pegEls.push(el);
+  }
+  for (let d = 0; d < S.n; d++) {
+    const el = document.createElement('div');
+    el.className = 'disk'; el.style.background = 'var(--d' + (d + 1) + ')'; el.textContent = d + 1;
+    b.appendChild(el); S.diskEls.push(el);
+  }
+  layoutBoard();
+}
+function layoutBoard() {
+  const b = $('board'), k = S.k, n = S.n;
+  const W = b.clientWidth || 320, colW = W / k;
+  const dh = n <= 4 ? 26 : n === 5 ? 24 : n === 6 ? 22 : n === 7 ? 20 : n === 8 ? 19 : n === 9 ? 17 : 16;
+  const H = Math.max(190, 30 + (n + 1.7) * dh);
+  b.style.height = H + 'px';
+  S.geom = { W, colW, dh, H };
+  S.pegEls.forEach((el, i) => { el.style.left = i * colW + 'px'; el.style.width = colW + 'px'; });
+  S.diskEls.forEach((el, d) => {
+    el.style.width = colW * (0.32 + 0.60 * (n > 1 ? d / (n - 1) : 0)) + 'px';
+    el.style.height = dh - 4 + 'px';
+    el.style.fontSize = dh < 19 ? '9px' : '11px';
+  });
+  placeDisks();
+}
+function placeDisks() {
+  const { colW, dh, H } = S.geom, cnt = new Array(S.k).fill(0);
+  for (let d = S.n - 1; d >= 0; d--) {
+    const p = S.pos[d], idx = cnt[p]++, el = S.diskEls[d], w = parseFloat(el.style.width);
+    const lifted = S.sel && S.sel.disk === d;
+    el.style.left = p * colW + (colW - w) / 2 + 'px';
+    el.style.bottom = (lifted ? H - dh - 2 : 31 + idx * dh) + 'px';
+    el.classList.toggle('sel', !!lifted);
+  }
+  S.pegEls.forEach((el, p) => {
+    const t = topOf(p);
+    el.classList.toggle('target', !!S.sel && S.sel.from !== p && canMove(S.sel.from, p));
+    el.setAttribute('aria-label', 'Tiang ' + PEGS[p] + (t < 0 ? ', kosong' : ', cakram teratas ' + (t + 1)));
+  });
+}
+function onPeg(p) {
+  if (S.busy) return;
+  if (!S.sel) {
+    const t = topOf(p);
+    if (t < 0) { setMsg('Tiang ' + PEGS[p] + ' kosong.'); return; }
+    S.sel = { disk: t, from: p }; setMsg('Pilih tiang tujuan untuk cakram ' + (t + 1) + '.'); placeDisks(); return;
+  }
+  if (S.sel.from === p) { S.sel = null; setMsg(''); placeDisks(); return; }
+  if (!canMove(S.sel.from, p)) { setMsg('Cakram besar tidak boleh diletakkan di atas cakram yang lebih kecil.', 'bad'); return; }
+  const disk = S.sel.disk; S.sel = null; setMsg('');
+  doMove(disk, S.pos[disk], p);
+  if (solved()) {
+    const best = S.opt;
+    setMsg('Selesai dalam ' + S.moves + ' langkah. ' + (best == null ? '' : S.moves === best ? 'Itu sudah langkah minimum.' : 'Langkah minimum untuk konfigurasi ini adalah ' + best + '.'), 'good');
+  }
+}
+function doMove(disk, from, to) {
+  S.pos[disk] = to; S.hist.push({ disk, from }); S.moves++;
+  placeDisks(); renderStatus();
+}
+function undo() {
+  if (S.busy || !S.hist.length) return;
+  const m = S.hist.pop(); S.pos[m.disk] = m.from; S.moves--; S.sel = null; setMsg(''); placeDisks(); renderStatus();
+}
+function resetBoard() {
+  stopPlay(); S.pos = new Array(S.n).fill(0); S.hist = []; S.moves = 0; S.sel = null; setMsg(''); placeDisks(); renderStatus();
+}
+function renderStatus() {
+  $('st-moves').textContent = S.moves; $('st-opt').textContent = S.opt == null ? '…' : S.opt; $('st-n').textContent = S.n;
+  $('btn-undo').disabled = S.busy || !S.hist.length;
+}
+function renderControls() {
+  document.querySelectorAll('#seg-k button').forEach((b) => { b.setAttribute('aria-pressed', String(+b.dataset.k === S.k)); b.disabled = S.busy; });
+  $('rng-n').disabled = S.busy; $('out-n').textContent = S.n; $('rng-n').value = S.n;
+  document.querySelectorAll('#chips .chip').forEach((c) => { c.setAttribute('aria-pressed', String(c.dataset.id === S.algo)); c.disabled = S.busy; });
+  const a = ALGOS.find((x) => x.id === S.algo);
+  $('algo-note').textContent = a.note;
+  $('btn-solve').textContent = S.busy ? 'Hentikan' : 'Selesaikan otomatis dengan ' + a.short;
+  $('btn-compare').disabled = S.busy;
+  renderStatus();
+}
+
+/* ----- runs ----- */
+function runAll(start) {
+  const P = getProb(S.k, S.n), results = {};
+  for (const a of ALGOS) results[a.id] = runSearch(a.id, P, start);
+  S.run = { k: S.k, n: S.n, P, start: start.slice(), results };
+  if (S.opt == null && start.every((p) => p === 0)) {
+    const o = results.ucs.found ? results.ucs : results.astar;
+    S.opt = o.found ? o.pathLen : null;
+  }
+  stopG();
+}
+function runningText() { return S.k ** S.n > 1e6 ? 'Menghitung… konfigurasi besar, bisa makan beberapa detik.' : 'Menghitung…'; }
+function scheduleRun(start) {
+  clearTimeout(S.runTimer);
+  $('runinfo').textContent = runningText();
+  S.runTimer = setTimeout(() => { runAll(start); afterRun(); }, 30);
+}
+function afterRun() { renderCompare(); setAlgo(S.algo); renderStatus(); }
+function labelOf(P, s) { return P.toPos(s).map((p) => PEGS[p]).join(''); }
+
+function setConfig(k, n, sync) {
+  stopPlay(); S.k = k; S.n = n;
+  S.pos = new Array(n).fill(0); S.hist = []; S.moves = 0; S.sel = null; setMsg('');
+  buildBoard();
+  S.opt = k === 3 ? 2 ** n - 1 : null;
+  renderControls();
+  if (sync) { runAll(S.pos.slice()); afterRun(); } else scheduleRun(S.pos.slice());
+}
+
+function stopPlay(msg) {
+  S.playTok++;
+  if (S.busy) { S.busy = false; renderControls(); }
+  if (msg) setMsg(msg);
+}
+async function playMoves(moves, name, optLen) {
+  const tok = ++S.playTok;
+  S.busy = true; renderControls();
+  const total = moves.length, batch = Math.max(1, Math.ceil(total / 600));
+  setMsg(name + ' menemukan solusi ' + fmt(total) + ' langkah. Memutar di papan…' + (batch > 1 ? ' (dipercepat, ' + fmt(batch) + ' langkah per frame)' : ''));
+  for (let i = 0; i < total; i += batch) {
+    if (tok !== S.playTok) return;
+    const end = Math.min(total, i + batch);
+    for (let j = i; j < end; j++) { const m = moves[j]; S.pos[m.disk] = m.to; S.hist.push({ disk: m.disk, from: m.from }); S.moves++; }
+    placeDisks(); renderStatus();
+    await sleep(S.speedMs);
+  }
+  if (tok !== S.playTok) return;
+  S.busy = false; renderControls();
+  setMsg('Selesai oleh ' + name + ' dalam ' + fmt(total) + ' langkah' + (optLen != null ? ' (minimum ' + fmt(optLen) + ').' : '.'), 'good');
+}
+async function autoSolve() {
+  if (S.busy) { stopPlay('Dihentikan.'); return; }
+  if (solved()) { setMsg('Menara sudah selesai. Ulangi dari awal untuk mencoba lagi.'); return; }
+  S.sel = null; placeDisks();
+  S.busy = true; renderControls(); setMsg(S.k ** S.n > 1e6 ? 'Menghitung dengan keempat algoritma… konfigurasi besar, bisa makan beberapa detik.' : 'Menghitung dengan keempat algoritma…');
+  await sleep(40);
+  runAll(S.pos.slice()); afterRun();
+  S.busy = false;
+  await playResult(S.algo, true);
+}
+async function playResult(id, keepBoard) {
+  const run = S.run, r = run.results[id], a = ALGOS.find((x) => x.id === id);
+  if (!r.found) { renderControls(); setMsg(a.short + ' tidak menemukan solusi dalam batas pencarian.', 'bad'); return; }
+  if (!keepBoard || !run.start.every((p, i) => p === S.pos[i])) {
+    S.pos = run.start.slice(); S.hist = []; S.moves = 0; S.sel = null; placeDisks(); renderStatus();
+  }
+  const u = run.results.ucs;
+  await playMoves(r.moves, a.short, u.found ? u.pathLen : null);
+}
+async function compareNow() {
+  if (S.busy) return;
+  S.sel = null; placeDisks();
+  $('runinfo').textContent = runningText();
+  await sleep(40);
+  runAll(S.pos.slice()); afterRun();
+  $('compare').scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+}
+
+/* ----- comparison table ----- */
+function fmtTime(ms) { return (ms < 10 ? ms.toFixed(2) : ms < 100 ? ms.toFixed(1) : Math.round(ms)) + ' ms'; }
+function renderCompare() {
+  const run = S.run; if (!run) return;
+  const R = run.results, ids = ALGOS.map((a) => a.id);
+  const init = run.start.every((p) => p === 0);
+  $('runinfo').textContent = run.k + ' tiang · ' + run.n + ' cakram · ' + (init ? 'dari posisi awal (semua cakram di tiang A)' : 'dari posisi saat ini (' + labelOf(run.P, run.P.enc(run.start)) + ')');
+  const found = ids.filter((i) => R[i].found);
+  const optLen = R.ucs.found ? R.ucs.pathLen : R.astar.found ? R.astar.pathLen : (found.length ? Math.min(...found.map((i) => R[i].pathLen)) : null);
+  const mx = (f) => Math.max(1, ...ids.map((i) => f(R[i])));
+  const mn = (f) => Math.min(...found.map((i) => f(R[i])));
+  const maxLen = mx((r) => r.pathLen), maxExp = mx((r) => r.expanded);
+  const bestLen = found.length ? mn((r) => r.pathLen) : -1, bestExp = found.length ? mn((r) => r.expanded) : -1;
+  const bestGen = found.length ? mn((r) => r.generated) : -1, bestFr = found.length ? mn((r) => r.frontierMax) : -1, bestT = found.length ? mn((r) => r.timeMs) : -1;
+  let html = '';
+  for (const a of ALGOS) {
+    const r = R[a.id];
+    const cls = (v, b) => (r.found && v === b ? ' class="best"' : '');
+    const opt = r.found ? (r.pathLen === optLen ? '<span class="pill ok">Ya</span>' : '<span class="pill no">Tidak</span>') : '<span class="pill no">' + (r.aborted ? 'Melebihi batas' : 'Gagal') + '</span>';
+    html += '<tr' + (a.id === S.algo ? ' class="active"' : '') + '>' +
+      '<td class="algo"><strong>' + a.short + '</strong><span>' + a.long + '</span></td>' +
+      '<td class="num"><div class="cell"><span' + cls(r.pathLen, bestLen) + '>' + (r.found ? fmt(r.pathLen) : '—') + '</span><div class="bar" style="width:' + (r.found ? Math.max(2, r.pathLen / maxLen * 100) : 0) + '%"></div></div></td>' +
+      '<td class="num"><div class="cell"><span' + cls(r.expanded, bestExp) + '>' + fmt(r.expanded) + '</span><div class="bar" style="width:' + Math.max(2, r.expanded / maxExp * 100) + '%"></div></div></td>' +
+      '<td class="num"><span' + cls(r.generated, bestGen) + '>' + fmt(r.generated) + '</span></td>' +
+      '<td class="num"><span' + cls(r.frontierMax, bestFr) + '>' + fmt(r.frontierMax) + '</span></td>' +
+      '<td class="num"><span' + cls(r.timeMs, bestT) + '>' + fmtTime(r.timeMs) + '</span></td>' +
+      '<td>' + opt + '</td>' +
+      '<td><div class="row-actions"><button class="btn sm" type="button" data-act="play" data-id="' + a.id + '"' + (r.found && !S.busy ? '' : ' disabled') + '>Putar</button>' +
+      '<button class="btn sm" type="button" data-act="graph" data-id="' + a.id + '">Graf</button></div></td></tr>';
+  }
+  $('cmp-body').innerHTML = html;
+  $('insight').textContent = makeInsight(R, optLen);
+}
+function makeInsight(R, optLen) {
+  if (optLen == null) return 'Tidak ada algoritma yang menemukan solusi dalam batas pencarian.';
+  const parts = [];
+  const optimal = ALGOS.filter((a) => R[a.id].found && R[a.id].pathLen === optLen).map((a) => a.short);
+  parts.push('Langkah minimum adalah ' + fmt(optLen) + (R.ucs.found ? '' : ' (dari A*, yang terbukti optimal)') + '. Yang mencapainya: ' + optimal.join(', ') + '.');
+  const stopped = ALGOS.filter((a) => R[a.id].aborted).map((a) => a.short);
+  if (stopped.length) parts.push(stopped.join(' dan ') + ' berhenti di batas ' + fmt(600000) + ' node tanpa menemukan solusi.');
+  if (R.ucs.found && R.astar.found && R.astar.pathLen === R.ucs.pathLen && R.astar.expanded < R.ucs.expanded)
+    parts.push('A* memproses ' + fmt(R.astar.expanded) + ' node, sedangkan UCS ' + fmt(R.ucs.expanded) + ' (' + (R.ucs.expanded / R.astar.expanded).toFixed(1) + '× lebih banyak) untuk panjang solusi yang sama.');
+  else if (!R.ucs.found && R.astar.found) parts.push('A* menemukan solusi optimal setelah memproses ' + fmt(R.astar.expanded) + ' node.');
+  if (R.gbfs.found && R.gbfs.pathLen > optLen) parts.push('GBFS hanya memproses ' + fmt(R.gbfs.expanded) + ' node tetapi solusinya ' + fmt(R.gbfs.pathLen) + ' langkah.');
+  else if (R.gbfs.found) parts.push('GBFS memproses ' + fmt(R.gbfs.expanded) + ' node dan kali ini kebetulan optimal.');
+  if (R.bfs.found && R.ucs.found) parts.push('BFS memproses ' + fmt(R.bfs.expanded) + ' node dan UCS ' + fmt(R.ucs.expanded) + '; keduanya hampir sama karena setiap langkah berbiaya 1.');
+  else if (R.bfs.aborted && !R.ucs.aborted) parts.push('BFS dihentikan oleh batas node.');
+  return parts.join(' ');
+}
+
+/* ----- graph data ----- */
+const MAXN = 2400;
+function prepGraph(r) {
+  if (r.g) return r.g;
+  const nd = r.nodes, N = nd.count;
+  const inSet = new Uint8Array(N);
+  const cut = Math.min(N, MAXN);
+  for (let i = 0; i < cut; i++) inSet[i] = 1;
+  const onPath = new Uint8Array(N);
+  for (const id of r.pathNodes) { inSet[id] = 1; onPath[id] = 1; }
+  const ids = []; for (let i = 0; i < N; i++) if (inSet[i]) ids.push(i);
+  const first = new Int32Array(N).fill(-1), last = new Int32Array(N).fill(-1), next = new Int32Array(N).fill(-1);
+  const depth = new Int32Array(N);
+  for (const id of ids) {
+    if (id === 0) continue;
+    const p = nd.parent[id]; depth[id] = depth[p] + 1;
+    if (first[p] < 0) first[p] = id; else next[last[p]] = id; last[p] = id;
+  }
+  const X = new Float32Array(N), Y = new Float32Array(N), order = [], stack = [0];
+  let leaf = 0;
+  while (stack.length) {
+    const v = stack.pop(); order.push(v);
+    if (first[v] < 0) X[v] = leaf++;
+    else { const ch = []; for (let c = first[v]; c >= 0; c = next[c]) ch.push(c); for (let j = ch.length - 1; j >= 0; j--) stack.push(ch[j]); }
+  }
+  for (let i = order.length - 1; i >= 0; i--) { const v = order[i]; if (first[v] >= 0) X[v] = (X[first[v]] + X[last[v]]) / 2; }
+  const L = Math.max(leaf, 1);
+  let maxD = 1; for (const id of ids) if (depth[id] > maxD) maxD = depth[id];
+  const R = Math.max(34, L * 16 / (2 * Math.PI * maxD));
+  let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
+  for (const id of ids) {
+    const a = (X[id] + 0.5) / L * 2 * Math.PI, rad = depth[id] * R;
+    X[id] = rad * Math.cos(a); Y[id] = rad * Math.sin(a);
+    if (X[id] < minX) minX = X[id]; if (X[id] > maxX) maxX = X[id];
+    if (Y[id] < minY) minY = Y[id]; if (Y[id] > maxY) maxY = Y[id];
+  }
+  const gap = Math.min(R, 2 * Math.PI * R * maxD / L);
+  const P = S.run.P, labels = new Array(N);
+  r.g = { ids, X, Y, onPath, minX, maxX, minY, maxY, gap, shown: ids.length, total: N, labels,
+    label(id) { return labels[id] || (labels[id] = labelOf(P, nd.state[id])); } };
+  return r.g;
+}
+function currentRes() { return S.run && S.run.results[S.algo]; }
+
+function setAlgo(id) {
+  S.algo = id; stopG();
+  renderControls(); renderSegAlgo();
+  if (S.run) {
+    document.querySelectorAll('#cmp-body tr').forEach((tr, i) => tr.classList.toggle('active', ALGOS[i].id === id));
+    const r = currentRes(); const g = prepGraph(r);
+    S.stage = r.T; S.gsel = -1; S.autoFit = true;
+    const sl = $('g-slider'); sl.max = r.T; sl.value = S.stage;
+    $('g-trunc').textContent = g.total > g.shown
+      ? 'Menampilkan ' + fmt(g.shown) + ' dari ' + fmt(g.total) + ' node: ' + fmt(MAXN) + ' node pertama ditambah jalur solusi.'
+      : 'Menampilkan seluruh ' + fmt(g.total) + ' node yang dibangkitkan.' + (r.found ? '' : ' Solusi tidak ditemukan.');
+    fitView(); syncStage(); renderDetail();
+  }
+}
+function renderSegAlgo() {
+  const seg = $('seg-algo');
+  if (!seg.children.length) {
+    ALGOS.forEach((a) => { const b = document.createElement('button'); b.type = 'button'; b.dataset.id = a.id; b.textContent = a.short; b.addEventListener('click', () => setAlgo(a.id)); seg.appendChild(b); });
+  }
+  [...seg.children].forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.id === S.algo)));
+}
+
+/* ----- stage controls ----- */
+function syncStage() {
+  const r = currentRes(); if (!r) return;
+  const t = S.stage, nd = r.nodes;
+  $('g-slider').value = t;
+  $('g-first').disabled = $('g-prev').disabled = t <= 0;
+  $('g-last').disabled = $('g-next').disabled = t >= r.T;
+  let s;
+  if (t === 0) s = 'Tahap 0/' + fmt(r.T) + ' · node awal ' + prepGraph(r).label(0) + ' · h=' + nd.h[0] + ' · frontier 1';
+  else {
+    const id = r.expAt[t], g = nd.g[id], h = nd.h[id];
+    s = 'Tahap ' + fmt(t) + '/' + fmt(r.T) + ' · ' + (id === r.goalNode ? 'tujuan tercapai ' : 'memproses ') + prepGraph(r).label(id) + ' · g=' + g + ' h=' + h + ' f=' + (g + h) + ' · frontier ' + fmt(r.frontierAt[t]);
+  }
+  $('g-info').textContent = s;
+  drawGraph(); renderDetail();
+}
+function setStage(t) { const r = currentRes(); S.stage = Math.max(0, Math.min(r.T, t)); syncStage(); }
+function stopG() {
+  if (S.gplay) { clearInterval(S.gplay); S.gplay = null; }
+  const b = $('g-play'); if (b) { b.innerHTML = '<svg viewBox="0 0 24 24"><path d="M7 4v16l13-8z"/></svg>'; b.setAttribute('aria-label', 'Putar tahap'); }
+}
+function toggleG() {
+  if (S.gplay) { stopG(); return; }
+  const r = currentRes(); if (!r) return;
+  if (S.stage >= r.T) S.stage = 0;
+  const step = Math.max(1, Math.ceil(r.T / 150));
+  $('g-play').innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>'; $('g-play').setAttribute('aria-label', 'Jeda');
+  syncStage();
+  S.gplay = setInterval(() => { S.stage = Math.min(r.T, S.stage + step); syncStage(); if (S.stage >= r.T) stopG(); }, 130);
+}
+
+/* ----- node detail ----- */
+function miniSvg(pos, k, n) {
+  const cw = 34, W = cw * k, dh = n > 8 ? 6.5 : 8, H = n * dh + 24;
+  let s = '<svg class="mini" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Posisi cakram pada node">';
+  for (let p = 0; p < k; p++) {
+    s += '<rect x="' + (p * cw + cw / 2 - 1.5) + '" y="4" width="3" height="' + (H - 18) + '" rx="1.5" style="fill:var(--pole)"/>';
+    s += '<rect x="' + (p * cw + 2) + '" y="' + (H - 14) + '" width="' + (cw - 4) + '" height="3" rx="1.5" style="fill:var(--pole)"/>';
+    s += '<text x="' + (p * cw + cw / 2) + '" y="' + (H - 2) + '" text-anchor="middle" style="fill:var(--ink-2);font:500 9px var(--font-mono)">' + PEGS[p] + '</text>';
+  }
+  const cnt = new Array(k).fill(0);
+  for (let d = n - 1; d >= 0; d--) {
+    const p = pos[d], idx = cnt[p]++, w = cw * (0.3 + 0.62 * (n > 1 ? d / (n - 1) : 0));
+    s += '<rect x="' + (p * cw + (cw - w) / 2) + '" y="' + (H - 14 - (idx + 1) * dh) + '" width="' + w + '" height="' + (dh - 1.5) + '" rx="2" style="fill:var(--d' + (d + 1) + ')"/>';
+  }
+  return s + '</svg>';
+}
+function renderDetail() {
+  const box = $('g-detail'), r = currentRes();
+  if (!r || S.gsel < 0) { box.innerHTML = '<p class="none">Ketuk sebuah node pada graf untuk melihat posisi cakram, nilai g, h, dan f.</p>'; return; }
+  const id = S.gsel, nd = r.nodes, g = nd.g[id], h = nd.h[id], t = S.stage;
+  let status;
+  if (nd.gen[id] > t) status = 'Belum dibangkitkan pada tahap ini';
+  else if (nd.exp[id] > 0 && nd.exp[id] <= t) status = 'Diproses pada tahap ' + fmt(nd.exp[id]) + (id === r.goalNode ? ' (tujuan)' : '');
+  else if (nd.skip[id] > 0 && nd.skip[id] <= t) status = 'Dibuang karena duplikat';
+  else status = 'Frontier (menunggu diproses)';
+  const gr = prepGraph(r), par = nd.parent[id];
+  box.innerHTML = miniSvg(S.run.P.toPos(nd.state[id]), S.run.k, S.run.n) +
+    '<dl><dt>State</dt><dd>' + gr.label(id) + '</dd><dt>Kedalaman g</dt><dd>' + g + '</dd><dt>Heuristik h</dt><dd>' + h + '</dd><dt>f = g + h</dt><dd>' + (g + h) + '</dd>' +
+    '<dt>Induk</dt><dd>' + (par >= 0 ? gr.label(par) : 'tidak ada (awal)') + '</dd><dt>Status</dt><dd>' + status + (gr.onPath[id] ? ' · di jalur solusi' : '') + '</dd></dl>';
+}
+
+/* ----- canvas ----- */
+const cv = $('cv'), ctx = cv.getContext('2d');
+function sizeCanvas() {
+  const wrap = $('cv-wrap'), dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  if (!w || !h) return;
+  S.cv = { w, h, dpr }; cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  if (S.autoFit) fitView();
+  drawGraph();
+}
+function fitView() {
+  const r = currentRes(); if (!r || !S.cv.w) return;
+  const g = prepGraph(r), { w, h } = S.cv, pad = 28;
+  const bw = Math.max(g.maxX - g.minX, 1), bh = Math.max(g.maxY - g.minY, 1);
+  const s = Math.min((w - 2 * pad) / bw, (h - 2 * pad) / bh, 2.2);
+  S.view.s = s; S.view.tx = (w - bw * s) / 2 - g.minX * s; S.view.ty = (h - bh * s) / 2 - g.minY * s;
+}
+function zoomAt(x, y, f) {
+  const V = S.view, ns = Math.max(0.01, Math.min(6, V.s * f)), k = ns / V.s;
+  V.tx = x - (x - V.tx) * k; V.ty = y - (y - V.ty) * k; V.s = ns; S.autoFit = false; drawGraph();
+}
+function drawGraph() {
+  const { w, h, dpr } = S.cv; if (!w) return;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+  const r = currentRes(); if (!r) return;
+  const g = prepGraph(r), nd = r.nodes, t = S.stage, V = S.view;
+  const cs = getComputedStyle(document.documentElement), col = (n) => cs.getPropertyValue(n).trim();
+  const cEdge = col('--g-edge'), cExp = col('--g-exp'), cFront = col('--g-front'), cCur = col('--g-cur'), cGoal = col('--g-goal'),
+        cPath = col('--g-path'), cPruned = col('--g-pruned'), cInk = col('--ink'), cInk2 = col('--ink-2'), cBg = col('--sunken');
+  const sx = (id) => g.X[id] * V.s + V.tx, sy = (id) => g.Y[id] * V.s + V.ty;
+  const rb = Math.max(2.2, Math.min(13, 5 * V.s)), M = 24;
+  const vis = []; 
+  for (const id of g.ids) if (nd.gen[id] <= t) vis.push(id);
+  // edges
+  ctx.lineWidth = 1; ctx.strokeStyle = cEdge; ctx.beginPath();
+  for (const id of vis) {
+    if (id === 0) continue; const p = nd.parent[id];
+    const x1 = sx(p), y1 = sy(p), x2 = sx(id), y2 = sy(id);
+    if ((x1 < -M && x2 < -M) || (x1 > w + M && x2 > w + M) || (y1 < -M && y2 < -M) || (y1 > h + M && y2 > h + M)) continue;
+    ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+  }
+  ctx.stroke();
+  ctx.lineWidth = 3; ctx.strokeStyle = cPath; ctx.beginPath();
+  for (const id of vis) { if (id === 0 || !g.onPath[id]) continue; const p = nd.parent[id]; ctx.moveTo(sx(p), sy(p)); ctx.lineTo(sx(id), sy(id)); }
+  ctx.stroke();
+  // nodes
+  const showLab = V.s * g.gap >= S.run.n * 6.8 + 8;
+  const special = [];
+  for (const id of vis) {
+    const x = sx(id), y = sy(id);
+    if (x < -M || x > w + M || y < -M || y > h + M) continue;
+    const e = nd.exp[id], sk = nd.skip[id];
+    const expanded = e > 0 && e <= t, pruned = !expanded && sk > 0 && sk <= t;
+    if (expanded && (e === t || id === r.goalNode) || g.onPath[id] || id === S.gsel) { special.push(id); continue; }
+    ctx.beginPath();
+    if (pruned) { ctx.fillStyle = cPruned; ctx.arc(x, y, rb * 0.6, 0, 6.2832); ctx.fill(); }
+    else if (expanded) { ctx.fillStyle = cExp; ctx.arc(x, y, rb, 0, 6.2832); ctx.fill(); }
+    else { ctx.fillStyle = cBg; ctx.strokeStyle = cFront; ctx.lineWidth = 1.6; ctx.arc(x, y, rb * 0.9, 0, 6.2832); ctx.fill(); ctx.stroke(); }
+  }
+  for (const id of special) {
+    const x = sx(id), y = sy(id), e = nd.exp[id], expanded = e > 0 && e <= t;
+    let rad = rb, fill = cBg, stroke = cFront;
+    if (expanded) { fill = cExp; stroke = cExp; }
+    if (expanded && id === r.goalNode) { fill = cGoal; stroke = cGoal; rad = rb * 1.7; }
+    else if (expanded && e === t) { fill = cCur; stroke = cCur; rad = rb * 1.5; }
+    if (g.onPath[id] && !(expanded && (id === r.goalNode || e === t))) stroke = cPath;
+    if (expanded && e === t && id !== r.goalNode) { ctx.beginPath(); ctx.strokeStyle = cCur; ctx.globalAlpha = 0.35; ctx.lineWidth = 4; ctx.arc(x, y, rad + 4, 0, 6.2832); ctx.stroke(); ctx.globalAlpha = 1; }
+    ctx.beginPath(); ctx.fillStyle = fill; ctx.strokeStyle = stroke; ctx.lineWidth = g.onPath[id] ? 2.4 : 1.6;
+    ctx.arc(x, y, rad, 0, 6.2832); ctx.fill(); ctx.stroke();
+    if (id === 0) { ctx.beginPath(); ctx.strokeStyle = cInk; ctx.lineWidth = 1.6; ctx.arc(x, y, rad + 3, 0, 6.2832); ctx.stroke(); }
+    if (id === S.gsel) { ctx.beginPath(); ctx.strokeStyle = cInk; ctx.lineWidth = 2; ctx.arc(x, y, rad + 5, 0, 6.2832); ctx.stroke(); }
+  }
+  if (showLab) {
+    ctx.font = "11px 'JetBrains Mono', ui-monospace, monospace"; ctx.textAlign = 'center'; ctx.fillStyle = cInk2; ctx.textBaseline = 'top';
+    for (const id of vis) {
+      const x = sx(id), y = sy(id);
+      if (x < -40 || x > w + 40 || y < -M || y > h + M) continue;
+      const sk = nd.skip[id]; if (sk > 0 && sk <= t && !(nd.exp[id] > 0)) continue;
+      ctx.fillText(g.label(id), x, y + rb + 4);
+    }
+  }
+}
+function hitTest(px, py) {
+  const r = currentRes(); if (!r) return -1;
+  const g = prepGraph(r), nd = r.nodes, V = S.view; let best = -1, bd = 14 * 14;
+  for (const id of g.ids) {
+    if (nd.gen[id] > S.stage) continue;
+    const dx = g.X[id] * V.s + V.tx - px, dy = g.Y[id] * V.s + V.ty - py, d = dx * dx + dy * dy;
+    if (d < bd) { bd = d; best = id; }
+  }
+  return best;
+}
+(function wireCanvas() {
+  const ptrs = new Map(); let lastDist = 0, moved = 0, downT = 0;
+  const pt = (e) => { const b = cv.getBoundingClientRect(); return { x: e.clientX - b.left, y: e.clientY - b.top }; };
+  cv.addEventListener('pointerdown', (e) => {
+    cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, pt(e));
+    if (ptrs.size === 1) { moved = 0; downT = Date.now(); }
+    else if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; lastDist = Math.hypot(a.x - b.x, a.y - b.y); }
+  });
+  cv.addEventListener('pointermove', (e) => {
+    if (!ptrs.has(e.pointerId)) return;
+    const p = pt(e), prev = ptrs.get(e.pointerId); ptrs.set(e.pointerId, p);
+    if (ptrs.size === 1) {
+      S.view.tx += p.x - prev.x; S.view.ty += p.y - prev.y; moved += Math.abs(p.x - prev.x) + Math.abs(p.y - prev.y);
+      S.autoFit = false; cv.classList.add('drag'); drawGraph();
+    } else if (ptrs.size === 2) {
+      const [a, b] = [...ptrs.values()], d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (lastDist) zoomAt((a.x + b.x) / 2, (a.y + b.y) / 2, d / lastDist);
+      lastDist = d; moved += 10;
+    }
+  });
+  const end = (e) => {
+    if (!ptrs.has(e.pointerId)) return;
+    if (ptrs.size === 1 && moved < 5 && Date.now() - downT < 600 && e.type === 'pointerup') {
+      const p = pt(e), id = hitTest(p.x, p.y); S.gsel = id; drawGraph(); renderDetail();
+    }
+    ptrs.delete(e.pointerId); lastDist = 0; cv.classList.remove('drag');
+  };
+  cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+  cv.addEventListener('wheel', (e) => {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    e.preventDefault(); const p = pt(e); zoomAt(p.x, p.y, Math.exp(-e.deltaY * 0.01));
+  }, { passive: false });
+})();
+
+/* ----- wiring ----- */
+function init() {
+  $('chips').innerHTML = ALGOS.map((a) => '<button class="chip" type="button" data-id="' + a.id + '" aria-pressed="false"><strong>' + a.short + '</strong><span>' + a.long + '</span></button>').join('');
+  $('chips').addEventListener('click', (e) => { const c = e.target.closest('.chip'); if (c && !S.busy) setAlgo(c.dataset.id); });
+  $('seg-k').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b && !S.busy && +b.dataset.k !== S.k) setConfig(+b.dataset.k, S.n); });
+  $('rng-n').addEventListener('input', (e) => { $('out-n').textContent = e.target.value; });
+  $('rng-n').addEventListener('change', (e) => { if (!S.busy && +e.target.value !== S.n) setConfig(S.k, +e.target.value); });
+  $('rng-speed').addEventListener('input', (e) => {
+    const v = +e.target.value; S.speedMs = SPEEDS[v - 1]; $('out-speed').textContent = SPEED_LABELS[v - 1];
+    document.documentElement.style.setProperty('--move-ms', Math.min(260, S.speedMs * 0.85) + 'ms');
+  });
+  $('board').addEventListener('click', (e) => { const p = e.target.closest('.peg'); if (p) onPeg(+p.dataset.peg); });
+  $('board').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { const p = e.target.closest('.peg'); if (p) { e.preventDefault(); onPeg(+p.dataset.peg); } } });
+  $('btn-undo').addEventListener('click', undo);
+  $('btn-reset').addEventListener('click', resetBoard);
+  $('btn-solve').addEventListener('click', autoSolve);
+  $('btn-compare').addEventListener('click', compareNow);
+  $('cmp-body').addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.act === 'graph') { setAlgo(b.dataset.id); $('graph').scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' }); }
+    else if (b.dataset.act === 'play' && !S.busy) { setAlgo(b.dataset.id); playResult(b.dataset.id, false); window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' }); }
+  });
+  $('g-first').addEventListener('click', () => { stopG(); setStage(0); });
+  $('g-prev').addEventListener('click', () => { stopG(); setStage(S.stage - 1); });
+  $('g-next').addEventListener('click', () => { stopG(); setStage(S.stage + 1); });
+  $('g-last').addEventListener('click', () => { stopG(); setStage(currentRes().T); });
+  $('g-play').addEventListener('click', toggleG);
+  $('g-slider').addEventListener('input', (e) => { stopG(); setStage(+e.target.value); });
+  $('z-in').addEventListener('click', () => zoomAt(S.cv.w / 2, S.cv.h / 2, 1.4));
+  $('z-out').addEventListener('click', () => zoomAt(S.cv.w / 2, S.cv.h / 2, 1 / 1.4));
+  $('z-fit').addEventListener('click', () => { S.autoFit = true; fitView(); drawGraph(); });
+  new ResizeObserver(sizeCanvas).observe($('cv-wrap'));
+  let bw = 0; new ResizeObserver(() => { const w = $('board').clientWidth; if (w && w !== bw) { bw = w; if (S.geom) layoutBoard(); } }).observe($('board'));
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', drawGraph);
+  new MutationObserver(drawGraph).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  setConfig(3, 3, true);
+  sizeCanvas();
+}
+init();
+</script>
+
+</body></html>
